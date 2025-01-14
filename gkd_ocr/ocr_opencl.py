@@ -1,0 +1,67 @@
+import os
+os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
+import numpy as np
+from keras.preprocessing.image import img_to_array, load_img
+from keras.utils import to_categorical
+
+def load_data(image_dir, label_dir, image_size=(100, 30), num_classes=10):
+    images = []
+    labels = []
+    for filename in os.listdir(image_dir):
+        if filename.endswith('.png'):
+            # 加载图像
+            img_path = os.path.join(image_dir, filename)
+            img = load_img(img_path, target_size=image_size, color_mode='grayscale')
+            img_array = img_to_array(img) / 255.0
+            images.append(img_array)
+
+            # 加载标签
+            label_path = os.path.join(label_dir, filename.replace('.png', '.txt'))
+            with open(label_path, 'r') as f:
+                label = f.read().strip()
+                label = [int(c) for c in label]  # 假设标签是数字
+                label = to_categorical(label, num_classes=num_classes)
+                labels.append(label)
+
+    return np.array(images), np.array(labels)
+
+# 训练模型 数据路径
+image_dir = 'data/images'
+label_dir = 'data/labels'
+
+X, y = load_data(image_dir, label_dir)
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+def build_model(input_shape, num_classes):
+    model = Sequential()
+    model.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Conv2D(128, (3, 3), activation='relu'))
+    model.add(MaxPooling2D((2, 2)))
+    model.add(Flatten())
+    model.add(Dense(128, activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(num_classes * 4, activation='softmax'))  # 假设验证码长度为4
+    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
+input_shape = (100, 30, 1)  # 图像尺寸 (高度, 宽度, 通道数)
+num_classes = 10  # 假设验证码中的字符是0-9
+model = build_model(input_shape, num_classes)
+model.fit(X, y, batch_size=32, epochs=10, validation_split=0.2)
+model.save('captcha_model.h5')
+
+#模型使用
+from keras.models import load_model
+model = load_model('captcha_model.h5')
+def predict_image(image_path, model, image_size=(100, 30)):
+    img = load_img(image_path, target_size=image_size, color_mode='grayscale')
+    img_array = img_to_array(img) / 255.0
+    img_array = np.expand_dims(img_array, axis=0)
+    predictions = model.predict(img_array)
+    predicted_labels = np.argmax(predictions, axis=-1)
+    return ''.join(map(str, predicted_labels[0]))
+image_path = 'data/images/example.png'
+predicted_label = predict_image(image_path, model)
+print(f'Predicted label: {predicted_label}')
